@@ -1,0 +1,7 @@
+fastapi==0.162.2
+starlette==1.7.0
+uvicorn[standard]==0.30.6
+kokoro-onnx==0.4.5
+soundfile==0.12.1
+numpy==2.2.6
+pydantic==2.9.2
