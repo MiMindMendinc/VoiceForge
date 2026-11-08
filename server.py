@@ -9,7 +9,8 @@ list. The defaults only accept connections from this computer.
 
 from __future__ import annotations
 
-import io
+import base64
+import json
 import logging
 import os
 import sys
@@ -18,20 +19,22 @@ from collections.abc import Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
-import soundfile as sf
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import Headers
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+from tts.audio import EncoderError, encode_audio, require_encoder, split_sentences
 from tts.engine import (
     EngineNotReadyError,
     SynthesisError,
@@ -40,7 +43,7 @@ from tts.engine import (
     is_english_voice,
 )
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 BASE_DIR = Path(__file__).resolve().parent
 MAX_TEXT_CHARS = 5000
@@ -214,6 +217,21 @@ class SpeakRequest(BaseModel):
     speed: float = Field(default=1.0, ge=0.5, le=2.0, description="Speaking rate, 0.5 to 2.0.")
 
 
+VOICE_ALIASES = {
+    "alloy": "af_heart", "echo": "am_adam", "fable": "bm_george",
+    "onyx": "am_michael", "nova": "af_bella", "shimmer": "af_sarah",
+}
+
+
+class AudioSpeechRequest(BaseModel):
+    input: str
+    model: str = "voiceforge"
+    voice: str = "af_bella"
+    speed: float = Field(default=1.0, ge=0.5, le=2.0, allow_inf_nan=False)
+    response_format: Literal["wav", "mp3", "opus"] = "wav"
+
+
+
 def voice_details(voice_id: str) -> dict[str, str]:
     name = voice_id[3:].replace("_", " ").title()
     accent = ACCENTS.get(voice_id[0], "")
@@ -268,9 +286,8 @@ def create_app(settings: Settings | None = None, engine: Any = None) -> FastAPI:
             problems.append(f"{'.'.join(loc)}: {msg}" if loc else msg)
         return JSONResponse({"error": "Invalid request. " + "; ".join(problems)}, status_code=422)
 
-    @app.post("/speak", response_class=Response)
-    async def speak(req: SpeakRequest):
-        text = req.text.strip()
+    def validate_text(text: str) -> str:
+        text = text.strip()
         if not text:
             raise HTTPException(400, "Text is required.")
         if len(text) > MAX_TEXT_CHARS:
@@ -279,39 +296,96 @@ def create_app(settings: Settings | None = None, engine: Any = None) -> FastAPI:
             )
         if not any(ch.isalnum() for ch in text):
             raise HTTPException(400, "Nothing to speak: the text must contain letters or numbers.")
+        return text
 
+    def admit() -> None:
         if app.state.pending >= settings.max_queue:
             raise HTTPException(
                 503, "VoiceForge is busy. Try again in a moment.", headers={"Retry-After": "2"}
             )
-
-        log.info(
-            "Speak request: %d characters (voice=%s, speed=%.2f)",
-            len(text), req.voice or engine.default_voice, req.speed,
-        )
         app.state.pending += 1
+
+    async def generate(text: str, voice: str | None, speed: float, fmt: str = "wav"):
         try:
-            audio = await run_in_threadpool(engine.synthesize, text, req.voice, req.speed)
+            audio = await run_in_threadpool(engine.synthesize, text, voice, speed)
+            return await run_in_threadpool(encode_audio, audio, engine.sample_rate, fmt)
         except EngineNotReadyError as exc:
             raise HTTPException(503, str(exc)) from None
         except UnknownVoiceError as exc:
             raise HTTPException(400, f"{exc} See GET /voices for the list of voices.") from None
         except SynthesisError as exc:
             raise HTTPException(422, str(exc)) from None
+        except EncoderError as exc:
+            raise HTTPException(503, str(exc)) from None
         except Exception:
             log.exception("Synthesis failed")
             raise HTTPException(
                 500, "Speech synthesis failed. Check the server log for details."
             ) from None
+
+    async def complete(text: str, voice: str | None, speed: float, fmt: str = "wav"):
+        text = validate_text(text)
+        try:
+            require_encoder(fmt)
+        except EncoderError as exc:
+            raise HTTPException(503, str(exc)) from None
+        admit()
+        try:
+            content, media_type = await generate(text, voice, speed, fmt)
+            return Response(content, media_type=media_type, headers={"Cache-Control": "no-store"})
         finally:
             app.state.pending -= 1
 
-        buffer = io.BytesIO()
-        sf.write(buffer, audio, engine.sample_rate, format="WAV", subtype="PCM_16")
-        return Response(
-            content=buffer.getvalue(),
-            media_type="audio/wav",
-            headers={"Cache-Control": "no-store"},
+    @app.post("/speak", response_class=Response)
+    async def speak(req: SpeakRequest):
+        return await complete(req.text, req.voice, req.speed)
+
+    @app.post("/v1/audio/speech", response_class=Response)
+    async def audio_speech(req: AudioSpeechRequest):
+        # Model names are accepted for OpenAI clients; this server has one model.
+        return await complete(
+            req.input, VOICE_ALIASES.get(req.voice, req.voice), req.speed, req.response_format
+        )
+
+    @app.post("/speak/stream")
+    async def stream_speech(req: SpeakRequest):
+        # Separate protocol: ordered SSE events containing independent WAV clips.
+        # The OpenAI endpoint above is deliberately NOT an SSE endpoint.
+        sentences = split_sentences(validate_text(req.text))
+        admit()
+        released = False
+
+        def release():
+            nonlocal released
+            if not released:
+                app.state.pending -= 1
+                released = True
+
+        try:
+            first, _ = await generate(sentences[0], req.voice, req.speed)
+        except BaseException:
+            release()
+            raise
+
+        async def events():
+            try:
+                for index, sentence in enumerate(sentences):
+                    if index == 0:
+                        content = first
+                    else:
+                        content, _ = await generate(sentence, req.voice, req.speed)
+                    data = {"index": index, "audio": base64.b64encode(content).decode("ascii"),
+                            "content_type": "audio/wav"}
+                    yield "event: audio\ndata: " + json.dumps(data) + "\n\n"
+                yield 'event: done\ndata: {}\n\n'
+            except HTTPException as exc:
+                yield "event: error\ndata: " + json.dumps({"error": exc.detail}) + "\n\n"
+            finally:
+                release()
+
+        return StreamingResponse(
+            events(), media_type="text/event-stream", background=BackgroundTask(release),
+            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
         )
 
     @app.get("/voices")

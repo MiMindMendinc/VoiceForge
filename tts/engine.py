@@ -102,7 +102,7 @@ class TTSEngine:
             self.error = None
             log.info("Model loaded from %s (%d English voices)", self.model_dir, len(self._voices))
             return True
-        except Exception:  # noqa: BLE001 - report any load failure, do not crash
+        except Exception:
             self._kokoro = None
             self.error = (
                 "The speech model failed to load. Check the server log, or run "
