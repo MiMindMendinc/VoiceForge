@@ -6,6 +6,7 @@ import threading
 from pathlib import Path
 
 import numpy as np
+
 from tts.engine import UnknownVoiceError
 
 
