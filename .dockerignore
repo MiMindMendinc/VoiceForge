@@ -1,0 +1,15 @@
+.git
+.github
+.venv
+venv
+models
+**/__pycache__
+**/*.pyc
+*.part
+*.wav
+*.egg-info
+dist
+build
+.pytest_cache
+.ruff_cache
+clients/js/node_modules
