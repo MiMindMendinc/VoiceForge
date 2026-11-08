@@ -3,6 +3,8 @@
 [![CI](https://github.com/MiMindMendinc/VoiceForge/actions/workflows/voiceforge.yml/badge.svg)](https://github.com/MiMindMendinc/VoiceForge/actions/workflows/voiceforge.yml)
 [![License: MIT](https://img.shields.io/github/license/MiMindMendinc/VoiceForge)](LICENSE)
 
+See [CHANGELOG.md](CHANGELOG.md) for what’s new in 1.2.0.
+
 **Give your local LLM a voice.** Generate speech on your own computer, or connect
 an app through the [OpenAI-compatible speech API](docs/LLM.md).
 
@@ -355,6 +357,8 @@ plus a `pip-audit` scan of the pinned dependencies.
 ├── models/                model files go here (created by download_models.py)
 ├── requirements.txt       pinned runtime dependencies
 ├── requirements-dev.txt   adds test and lint tools
+├── CHANGELOG.md
+├── SECURITY.md
 ├── LICENSE
 ├── THIRD_PARTY_NOTICES.md
 ├── licenses/              Apache 2.0 (Kokoro) and MIT (kokoro-onnx)
