@@ -1,0 +1,34 @@
+name: Bug report
+description: Something is not working as expected
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      description: What did you see, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      description: OS, Python version, and VoiceForge version or commit if you know it.
+      placeholder: "e.g. Ubuntu 24.04, Python 3.12, commit abc1234"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Paste text only. Do not include secrets, tokens, API keys, or personal information.
+      render: shell
