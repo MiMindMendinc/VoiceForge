@@ -5,8 +5,9 @@ from __future__ import annotations
 import hashlib
 import re
 
-import download_models as dm
 import pytest
+
+import download_models as dm
 
 
 def make_spec(content: bytes, name: str = "model.bin") -> dm.ModelFile:

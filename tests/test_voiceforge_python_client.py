@@ -11,11 +11,12 @@ from pathlib import Path
 import pytest
 import soundfile as sf
 import uvicorn
-from server import Settings, create_app
 from voiceforge_fakes import FakeEngine
 
+from server import Settings, create_app
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "clients" / "python"))
-from voiceforge import VoiceForge, VoiceForgeError  # noqa: E402
+from voiceforge import VoiceForge, VoiceForgeError
 
 
 @pytest.fixture(scope="module")

@@ -25,8 +25,9 @@ def fake_engine() -> Any:
 def make_client(tmp_path: Path) -> Iterator[Callable[..., Any]]:
     """Build a TestClient for an app with the given engine and settings."""
     from fastapi.testclient import TestClient
-    from server import Settings, create_app
     from voiceforge_fakes import FakeEngine
+
+    from server import Settings, create_app
 
     clients: list[TestClient] = []
 
