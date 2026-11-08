@@ -251,11 +251,19 @@ plus a `pip-audit` scan of the pinned dependencies.
 ├── requirements.txt       pinned runtime dependencies
 ├── requirements-dev.txt   adds test and lint tools
 ├── LICENSE
+├── THIRD_PARTY_NOTICES.md
+├── licenses/              Apache 2.0 (Kokoro) and MIT (kokoro-onnx)
 └── README.md
 ```
 
 ## License
 
-Released under the MIT License (see `LICENSE`). The Kokoro model and the `kokoro-onnx` library
-are separate projects with their own licenses. Check their repositories before
-you ship a product that uses them.
+VoiceForge is released under the MIT License (see `LICENSE`).
+
+It uses two separate projects, which keep their own licenses:
+
+- The [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) model, Apache License 2.0
+- The [kokoro-onnx](https://github.com/thewh1teagle/kokoro-onnx) library, MIT License
+
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for details and copies of
+those licenses.
