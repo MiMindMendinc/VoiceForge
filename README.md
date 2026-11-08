@@ -1,5 +1,19 @@
 # VoiceForge
 
+[![CI](https://github.com/MiMindMendinc/VoiceForge/actions/workflows/voiceforge.yml/badge.svg)](https://github.com/MiMindMendinc/VoiceForge/actions/workflows/voiceforge.yml)
+[![License: MIT](https://img.shields.io/github/license/MiMindMendinc/VoiceForge)](LICENSE)
+
+**Give your local LLM a voice.** Generate speech on your own computer, or connect
+an app through the [OpenAI-compatible speech API](docs/LLM.md).
+
+On the working local page, with status **Ready** and voice **Bella (US, female)** at 1.00×,
+VoiceForge spoke “Hello. This is VoiceForge speaking. I am running locally, with no cloud API.”
+and generated the clip in **0.8 seconds**. That capture is from v1.1.0.
+
+Already set up? Start with one command: `voiceforge serve`, then open
+**http://localhost:8000**, type, and press **Speak** (or **Ctrl/⌘ + Enter**).
+For first-time setup, follow [Quick start](#quick-start).
+
 A local, free, high-quality text-to-speech server. Speech is generated on your
 machine by the open-source [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M)
 model running through ONNX. There are no API keys, no accounts, and no network
@@ -18,15 +32,38 @@ Run these commands from the repository root:
 ```bash
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-python download_models.py          # one-time, downloads about 350 MB
-python server.py
+pip install -e .
+voiceforge serve
 ```
+
+`voiceforge serve` downloads any missing model files (about 350 MB) before it
+starts the server. Use `voiceforge serve --no-download` to skip that, or
+`voiceforge download` to fetch or verify the files without starting the server.
 
 Then open **http://localhost:8000** in your browser, type something, and press
 **Speak** (or **Ctrl/⌘ + Enter**).
 
 On Windows PowerShell, activate the environment with `.venv\Scripts\Activate.ps1`.
+
+## Docker
+
+A CPU `Dockerfile` is in the repository root. The image does not bake in the
+model files. It installs FFmpeg (with `libmp3lame` and `libopus` for MP3/Opus)
+and listens on `0.0.0.0:8000` inside the container.
+
+```bash
+docker build -t voiceforge .
+docker run --rm -p 8000:8000 -v "$PWD/models:/app/models" voiceforge
+```
+
+The container starts with `voiceforge serve` and `VOICEFORGE_NO_DOWNLOAD=1`, so
+it will not download models unless you set `VOICEFORGE_NO_DOWNLOAD=0`. Mount a
+`models/` folder as shown so the speech files persist on the host.
+
+## Hook it to your LLM
+
+See [the LLM hook-up guide](docs/LLM.md) for `POST /v1/audio/speech`
+and copy-paste Ollama, llama.cpp, and Open WebUI setups.
 
 ## Model files
 
@@ -45,9 +82,10 @@ values were computed from its official `model-files-v1.0` release files.
 
 | Command | What it does |
 | --- | --- |
-| `python download_models.py` | downloads missing or unverified files |
-| `python download_models.py --check` | verifies the files you have, downloads nothing |
-| `python download_models.py --force` | downloads both files again |
+| `voiceforge download` | downloads missing or unverified files |
+| `voiceforge download --check` | verifies the files you have, downloads nothing |
+| `voiceforge download --force` | downloads both files again |
+| `python download_models.py` | same checks, if you prefer the script directly |
 
 To download manually, get both files from the
 [model-files-v1.0 release](https://github.com/thewh1teagle/kokoro-onnx/releases/tag/model-files-v1.0),
@@ -129,6 +167,66 @@ curl -X POST http://localhost:8000/speak \
 | `503` | The model is not installed or failed to load (see `/health`), or the server is busy. A busy response includes a `Retry-After` header. |
 | `500` | An unexpected error. Details are written to the server log, not sent to the client. |
 
+### `POST /v1/audio/speech`
+
+OpenAI-compatible endpoint. Apps that already talk to OpenAI's speech API can
+point at VoiceForge instead. Speech is generated the same way as `POST /speak`.
+
+Request body (JSON):
+
+| Field | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `input` | string | required | Same text rules as `/speak` |
+| `model` | string | `voiceforge` | Accepted for compatibility; this server has one model |
+| `voice` | string | `af_bella` | A Kokoro voice id, or one of the OpenAI names below |
+| `speed` | number | `1.0` | from `0.5` to `2.0` |
+| `response_format` | string | `wav` | `wav`, `mp3`, or `opus` |
+
+OpenAI voice names map to these Kokoro English voices. Native ids such as
+`af_bella` or `bf_emma` are accepted unchanged.
+
+| OpenAI name | Kokoro voice |
+| --- | --- |
+| `alloy` | `af_heart` |
+| `echo` | `am_adam` |
+| `fable` | `bm_george` |
+| `onyx` | `am_michael` |
+| `nova` | `af_bella` |
+| `shimmer` | `af_sarah` |
+
+Response: `200 OK` with audio. WAV is `audio/wav` (16-bit PCM, 24 kHz, mono).
+MP3 is `audio/mpeg`. Opus is `audio/ogg`.
+
+MP3 and Opus need a system FFmpeg build that includes `libmp3lame` and
+`libopus`. If FFmpeg is missing, those formats return HTTP 503 and ask the
+caller to use WAV.
+
+```bash
+curl -X POST http://localhost:8000/v1/audio/speech \
+  -H "Content-Type: application/json" \
+  -d '{"input": "Hello from VoiceForge", "voice": "nova", "speed": 1.0, "response_format": "wav"}' \
+  --output hello.wav
+```
+
+### `POST /speak/stream`
+
+Speaks one sentence at a time so playback can start after the first sentence,
+without waiting for the rest. The request body is the same as `/speak`
+(`text`, `voice`, `speed`).
+
+Response: `200 OK` with `Content-Type: text/event-stream`. Each `audio` event
+is JSON with `index`, `audio` (base64-encoded WAV), and `content_type`. A
+`done` event ends the stream. If a later sentence fails, an `error` event is
+sent instead of closing with a silent failure.
+
+Sentences are split on `.`, `!`, or `?` followed by whitespace.
+
+```bash
+curl -N -X POST http://localhost:8000/speak/stream \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Hello from VoiceForge. This starts quickly."}'
+```
+
 ### `GET /voices`
 
 Returns the default voice and the English voices that are available:
@@ -155,7 +253,7 @@ The model also includes other languages, which VoiceForge does not expose yet.
   "voices": 28,
   "missing_files": [],
   "error": null,
-  "version": "1.1.0"
+  "version": "1.2.0"
 }
 ```
 
@@ -212,9 +310,10 @@ Otherwise the browser request is rejected with HTTP 403.
 
 ## Troubleshooting
 
-- **The page says the model is not installed.** Run `python download_models.py`, then restart `python server.py`.
+- **The page says the model is not installed.** Run `voiceforge download`, then start `voiceforge serve`.
 - **`Address already in use`.** Another program is using port 8000. Start VoiceForge on a different port with `VOICEFORGE_PORT=8001`.
-- **The model fails to load.** Run `python download_models.py --check`. If a file fails, run `python download_models.py` to replace it.
+- **The model fails to load.** Run `voiceforge download --check`. If a file fails, run `voiceforge download` to replace it.
+- **MP3 or Opus returns HTTP 503.** Install FFmpeg with libmp3lame and libopus, or request `response_format: "wav"`.
 - **`Host not allowed`.** You reached VoiceForge by a name it does not accept, such as your computer's network name. Add that name to `VOICEFORGE_ALLOWED_HOSTS`.
 - **`Cross-origin requests are not allowed`.** A web page on another origin called the API. Add that origin to `VOICEFORGE_ALLOWED_ORIGINS`.
 - **`pip install` fails on `numpy`, `onnxruntime`, or `soundfile`.** Upgrade pip with `python -m pip install --upgrade pip`, then try again. Make sure you are using Python 3.10 or newer.
@@ -238,7 +337,10 @@ plus a `pip-audit` scan of the pinned dependencies.
 ```
 .
 ├── server.py              HTTP server, API and request checks
+├── voiceforge_cli.py      `voiceforge` command (`serve` / `download`)
 ├── download_models.py     downloads and verifies the model files
+├── pyproject.toml         package metadata and the `voiceforge` script
+├── Dockerfile             CPU image; model not included
 ├── tts/
 │   └── engine.py          Kokoro engine wrapper
 ├── static/
@@ -246,6 +348,9 @@ plus a `pip-audit` scan of the pinned dependencies.
 ├── clients/
 │   ├── python/voiceforge.py
 │   └── js/                voiceforge.js and its tests
+├── docs/
+│   └── LLM.md             LLM and Open WebUI speech setups
+├── CONTRIBUTING.md        development checks and pull requests
 ├── tests/                 pytest suite (no model needed)
 ├── models/                model files go here (created by download_models.py)
 ├── requirements.txt       pinned runtime dependencies
