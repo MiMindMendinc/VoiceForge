@@ -27,6 +27,10 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Runtime and test dependency pins refreshed (including Uvicorn, kokoro-onnx, SoundFile, Pydantic, HTTPX, and Ruff)
 - README documents `voiceforge serve`, the OpenAI speech API, streaming, Docker, and the LLM hookup guide
 
+### Fixed
+
+- `--check` and `--force` cannot be combined; using both now exits with a usage error and downloads nothing.
+
 ## [1.1.0] - 2026-11-08
 
 ### Added

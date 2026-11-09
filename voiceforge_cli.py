@@ -2,7 +2,7 @@
 
     voiceforge serve             start the server; downloads missing model files first
     voiceforge serve --no-download
-    voiceforge download [--check] [--force]
+    voiceforge download [--check | --force]
 
 Automatic download on `serve` is skipped when any of these is set:
   --no-download, VOICEFORGE_NO_DOWNLOAD=1, CI=true (set by GitHub Actions).
@@ -87,8 +87,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     dl = sub.add_parser("download", help="download and verify the model files")
     dl.add_argument("--dir", help="folder for the model files (default: ./models)")
-    dl.add_argument("--check", action="store_true", help="only verify existing files")
-    dl.add_argument("--force", action="store_true", help="download again even if files verify")
+    mode = dl.add_mutually_exclusive_group()
+    mode.add_argument("--check", action="store_true", help="only verify existing files")
+    mode.add_argument("--force", action="store_true", help="download again even if files verify")
     dl.set_defaults(func=_download)
     return parser
 
