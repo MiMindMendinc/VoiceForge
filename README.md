@@ -5,6 +5,10 @@
 
 See [CHANGELOG.md](CHANGELOG.md) for what’s new in 1.2.0.
 
+[![VoiceForge showcase: hear Bella, Emma, and George](docs/showcase.png)](https://spruce-winter-royal-sunny.grok.me)
+
+**[Hear the voices on the showcase page](https://spruce-winter-royal-sunny.grok.me)**: Bella, Emma, and George, rendered offline with the same Kokoro model VoiceForge serves.
+
 **Give your local LLM a voice.** Generate speech on your own computer, or connect
 an app through the [OpenAI-compatible speech API](docs/LLM.md).
 
